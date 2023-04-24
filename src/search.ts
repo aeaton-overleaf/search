@@ -96,6 +96,8 @@ export class SearchQuery {
   /// When true, matches that contain words are ignored when there are
   /// further word characters around them.
   readonly wholeWord: boolean
+  /// When set, only include search matches within these ranges
+  readonly scope?: Readonly<{ from: number; to: number }[]>
 
   /// @internal
   readonly unquoted: string
@@ -116,6 +118,8 @@ export class SearchQuery {
     replace?: string,
     /// Enable whole-word matching.
     wholeWord?: boolean
+    /// The ranges to match within
+    scope?: Readonly<{ from: number; to: number }[]>
   }) {
     this.search = config.search
     this.caseSensitive = !!config.caseSensitive
@@ -125,6 +129,7 @@ export class SearchQuery {
     this.valid = !!this.search && (!this.regexp || validRegExp(this.search))
     this.unquoted = this.unquote(this.search)
     this.wholeWord = !!config.wholeWord
+    this.scope = config.scope
   }
 
   /// @internal
@@ -137,7 +142,7 @@ export class SearchQuery {
   eq(other: SearchQuery) {
     return this.search == other.search && this.replace == other.replace &&
       this.caseSensitive == other.caseSensitive && this.regexp == other.regexp &&
-      this.wholeWord == other.wholeWord
+      this.wholeWord == other.wholeWord && this.scope == other.scope
   }
 
   /// @internal
@@ -173,9 +178,16 @@ abstract class QueryType<Result extends SearchResult = SearchResult> {
 const enum FindPrev { ChunkSize = 10000 }
 
 function stringCursor(spec: SearchQuery, state: EditorState, from: number, to: number) {
+  const test = spec.wholeWord ? stringWordTest(state.doc, state.charCategorizer(state.selection.main.head)) : undefined
+
+  const testWithinScope = (from: number, to: number, buffer: string, bufferPos: number) => {
+    return (!test || test(from, to, buffer, bufferPos))
+        && (!spec.scope || spec.scope.some(range => from >= range.from && from <= range.to && to >= range.from && to <= range.to))
+  }
+
   return new SearchCursor(
-    state.doc, spec.unquoted, from, to, spec.caseSensitive ? undefined : x => x.toLowerCase(),
-    spec.wholeWord ? stringWordTest(state.doc, state.charCategorizer(state.selection.main.head)) : undefined)
+    state.doc, spec.unquoted, from, to, spec.caseSensitive ? undefined : x => x.toLowerCase(), testWithinScope
+  )
 }
 
 function stringWordTest(doc: Text, categorizer: (ch: string) => CharCategory) {
@@ -243,9 +255,16 @@ const enum RegExp { HighlightMargin = 250 }
 type RegExpResult = typeof RegExpCursor.prototype.value
 
 function regexpCursor(spec: SearchQuery, state: EditorState, from: number, to: number) {
+  const test = spec.wholeWord ? regexpWordTest(state.charCategorizer(state.selection.main.head)) : undefined
+
+  const testWithinScope = (from: number, to: number, match: RegExpExecArray) => {
+    return (!test || test(from, to, match))
+      && (!spec.scope || spec.scope.some(range => from >= range.from && from <= range.to && to >= range.from && to <= range.to))
+  }
+
   return new RegExpCursor(state.doc, spec.search, {
     ignoreCase: !spec.caseSensitive,
-    test: spec.wholeWord ? regexpWordTest(state.charCategorizer(state.selection.main.head)) : undefined
+    test: testWithinScope,
   }, from, to)
 }
 
