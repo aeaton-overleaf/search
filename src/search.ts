@@ -591,8 +591,10 @@ class SearchPanel implements Panel {
   caseField: HTMLInputElement
   reField: HTMLInputElement
   wordField: HTMLInputElement
+  withinSelectionField: HTMLInputElement
   dom: HTMLElement
   query: SearchQuery
+  scope?: Readonly<{ from: number, to: number }[]>
 
   constructor(readonly view: EditorView) {
     let query = this.query = view.state.field(searchState).query.spec
@@ -640,6 +642,18 @@ class SearchPanel implements Panel {
       checked: query.wholeWord,
       onchange: this.commit
     }) as HTMLInputElement
+    this.withinSelectionField = elt("input", {
+      type: "checkbox",
+      name: "withinSelection",
+      form: "",
+      checked: !!query.scope,
+      onchange: (event: Event) => {
+        this.scope = (event.target as HTMLInputElement).checked
+            ? view.state.selection.ranges
+            : undefined
+        this.commit()
+      }
+    }) as HTMLInputElement
 
     function button(name: string, onclick: () => void, content: (Node | string)[]) {
       return elt("button", {class: "cm-button", name, onclick, type: "button"}, content)
@@ -652,6 +666,7 @@ class SearchPanel implements Panel {
       elt("label", null, [this.caseField, phrase(view, "match case")]),
       elt("label", null, [this.reField, phrase(view, "regexp")]),
       elt("label", null, [this.wordField, phrase(view, "by word")]),
+      elt("label", null, [this.withinSelectionField, phrase(view, "within selection")]),
       ...view.state.readOnly ? [] : [
         elt("br"),
         this.replaceField,
@@ -674,6 +689,7 @@ class SearchPanel implements Panel {
       regexp: this.reField.checked,
       wholeWord: this.wordField.checked,
       replace: this.replaceField.value,
+      scope: this.scope
     })
     if (!query.eq(this.query)) {
       this.query = query
